@@ -14,4 +14,4 @@ CC_FLAGS += -MMD
 
 .PHONY: clean
 clean:
-	rm -f $(OBJ_FILES) main
+	rm -f $(OBJ_FILES) $(OBJ_FILES:.o=.d) main
