@@ -9,21 +9,22 @@ namespace timer {
 template <class Functor>
 class Timer {
     private:
-        Functor executable;
-        std::string execName;
-        // Timer_Thread *thread_p;
-        std::thread * d_threadScheduler;
-        std::thread * d_threadRunner;
-        std::mutex d_mutexForRunner;
-        std::condition_variable d_cv;
-        bool d_canceled;
-        // std::chrono::time_point<std::chrono::high_resolution_clock> d_threadStart;
-        void sleep(const std::chrono::duration<double, std::milli>& timeInterval) {
+        Functor                   d_executable;
+        std::string               d_execName;
+        std::thread              *d_threadScheduler;
+        std::thread              *d_threadRunner;
+        std::mutex                d_mutexForRunner;
+        std::condition_variable   d_cv;
+        bool                      d_canceled;
+
+        // PRIVATE method scheduler method
+        void schedule(const std::chrono::duration<double, std::milli>& timeInterval) {
             std::cout << "["
-                << std::this_thread::get_id()
-                << "] Sleeping for: "
-                << timeInterval.count()
-                << std::endl;
+                      << std::this_thread::get_id()
+                      << "] Sleeping for: "
+                      << timeInterval.count()
+                      << std::endl;
+            // adding scope layer for unique_lock
             {
                 std::unique_lock<std::mutex> lk(d_mutexForRunner);
                 if(d_cv.wait_for(lk, timeInterval, [&]{return d_canceled;})) {
@@ -31,23 +32,25 @@ class Timer {
                         << std::this_thread::get_id()
                         << "] Task was canceled\n";
                     return;
-                }
-                else {
+                } else {
                     std::cout << "["
-                        << std::this_thread::get_id()
-                        << "] Task not canceled. Creating thread\n";
-                    // Can reach here from CV notify or timeout. We control the CV,
-                    // so ideally should reach here only on timeout
-                    // FIXME check if we hold the lock from wait_for
-                    d_threadRunner = new std::thread (executable);
+                              << std::this_thread::get_id()
+                              << "] Task not canceled. Creating thread\n";
+                    // It is possible to reach this code block on CV notify or timeout.
+                    // We control the CV, so ideally should reach here only on timeout
+                    // (CV notify is only called when the d_canceled is set to
+                    // true)
+                    
+                    // wait_for has acquired the lock for us
+                    d_threadRunner = new std::thread (d_executable);
                 }
             }
             if (d_threadRunner)
                 d_threadRunner->join();
         }
     public:
-        Timer(Functor f, std::string name): executable(f),
-            execName(name),
+        Timer(Functor f, std::string name): d_executable(f),
+            d_execName(name),
             d_threadScheduler(NULL),
             d_threadRunner(NULL),
             d_canceled(false){
@@ -64,9 +67,7 @@ class Timer {
         void scheduleTask(const std::chrono::duration<double,
                 std::milli>& timeInterval) {
 
-            // thread_p = new Timer_Thread(execName, timeInterval);
-            // d_threadStart = std::chrono::high_resolution_clock::now();
-            d_threadScheduler = new std::thread(&Timer::sleep, this, timeInterval);
+            d_threadScheduler = new std::thread(&Timer::schedule, this, timeInterval);
             // FIXME does std::thread constructor fail??
         }
 
@@ -78,6 +79,7 @@ class Timer {
                     std::cout << "[" << std::this_thread::get_id() << "] Thread has already started\n.";
                     return;
                 }
+                // Thread has not been scheduled yet..
                 d_canceled = true;
                 d_cv.notify_all();
             }
