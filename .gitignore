@@ -1,4 +1,5 @@
 *.o
 *.d
 *.out
+*.h.gch
 main
