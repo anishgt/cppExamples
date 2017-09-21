@@ -2,6 +2,7 @@
 #include <iostream>
 #include <mutex>
 #include <thread>
+#include <condition_variable>
 
 namespace timer {
 
@@ -14,15 +15,32 @@ class Timer {
         std::thread * d_threadScheduler;
         std::thread * d_threadRunner;
         std::mutex d_mutexForRunner;
+        std::condition_variable d_cv;
         bool d_canceled;
         // std::chrono::time_point<std::chrono::high_resolution_clock> d_threadStart;
         void sleep(const std::chrono::duration<double, std::milli>& timeInterval) {
-            std::cout << "[" << std::this_thread::get_id() << "] Sleeping for: " << timeInterval.count() << std::endl;
-            std::this_thread::sleep_for(timeInterval);
+            std::cout << "["
+                << std::this_thread::get_id()
+                << "] Sleeping for: "
+                << timeInterval.count()
+                << std::endl;
             {
-                std::lock_guard<std::mutex> lock(d_mutexForRunner);
-                if (!d_canceled)
+                std::unique_lock<std::mutex> lk(d_mutexForRunner);
+                if(d_cv.wait_for(lk, timeInterval, [&]{return d_canceled;})) {
+                    std::cout << "["
+                        << std::this_thread::get_id()
+                        << "] Task was canceled\n";
+                    return;
+                }
+                else {
+                    std::cout << "["
+                        << std::this_thread::get_id()
+                        << "] Task not canceled. Creating thread\n";
+                    // Can reach here from CV notify or timeout. We control the CV,
+                    // so ideally should reach here only on timeout
+                    // FIXME check if we hold the lock from wait_for
                     d_threadRunner = new std::thread (executable);
+                }
             }
             if (d_threadRunner)
                 d_threadRunner->join();
@@ -61,6 +79,7 @@ class Timer {
                     return;
                 }
                 d_canceled = true;
+                d_cv.notify_all();
             }
         }
 };
